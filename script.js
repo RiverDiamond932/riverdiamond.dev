@@ -31,14 +31,14 @@ const regions = [
 ];
 const regionEls = linksBox
   ? regions.map((r) => {
-    const a = document.createElement("a");
-    a.textContent = r.label;
-    a.href = r.href;
-    a.className = "globe-link";
-    if (r.href.startsWith("http")) a.rel = "noreferrer noopener";
-    linksBox.appendChild(a);
-    return a;
-  })
+      const a = document.createElement("a");
+      a.textContent = r.label;
+      a.href = r.href;
+      a.className = "globe-link";
+      if (r.href.startsWith("http")) a.rel = "noreferrer noopener";
+      linksBox.appendChild(a);
+      return a;
+    })
   : [];
 const phrase = "Привет, я river_diamond";
 function typeText(el, text, speed, caretEl) {
@@ -167,8 +167,7 @@ function startGlobe() {
     e.preventDefault();
   });
   function endDrag(e) {
-    if (!drag || (e.pointerId !== undefined && drag.id !== e.pointerId))
-      return;
+    if (!drag || (e.pointerId !== undefined && drag.id !== e.pointerId)) return;
     if (drag.moved) suppressClickUntil = performance.now() + 350;
     if (drag.moved && drag.total !== 0) {
       autoStep = Math.sign(drag.total) * 0.022;
@@ -230,10 +229,16 @@ let rising = false;
 let earthUp = sessionStorage.getItem("earthRisen") === "1";
 sessionStorage.removeItem("earthRisen");
 let liftTimer = null;
+let globeTravel = 0;
 const SINK_STEP_PX = 18;
 const SINK_STEP_MS = 170;
 function wrapY(wrap) {
-  return parseInt((wrap.style.transform || "0").replace(/[^0-9-]/g, "")) || 0;
+  const match = /translateY\((-?[\d.]+)px\)/.exec(wrap.style.transform || "");
+  return match ? Number(match[1]) : 0;
+}
+function globeDistance(wrap) {
+  const baseTop = wrap.getBoundingClientRect().top - wrapY(wrap);
+  return Math.max(1, window.innerHeight - baseTop);
 }
 function moveGlobe(up) {
   cancelGlobeDrag();
@@ -244,18 +249,13 @@ function moveGlobe(up) {
   const wrap = document.querySelector(".globe-wrap");
   if (!wrap) return;
   wrap.classList.remove("interactive");
-  let target = 0;
-  if (!up) {
-    const baseTop = wrap.getBoundingClientRect().top - wrapY(wrap);
-    target =
-      Math.ceil((window.innerHeight - baseTop + 20) / SINK_STEP_PX) *
-      SINK_STEP_PX;
-  }
-  let y = wrapY(wrap);
+  globeTravel = globeDistance(wrap);
   liftTimer = setInterval(() => {
-    y = up
-      ? Math.max(target, y - SINK_STEP_PX)
-      : Math.min(target, y + SINK_STEP_PX);
+    const target = up ? 0 : globeTravel;
+    const current = wrapY(wrap);
+    const y = up
+      ? Math.max(target, current - SINK_STEP_PX)
+      : Math.min(target, current + SINK_STEP_PX);
     wrap.style.transform = "translateY(" + y + "px)";
     if (y === target) {
       clearInterval(liftTimer);
@@ -272,14 +272,14 @@ function toggleGlobe() {
 function sinkInstant() {
   const wrap = document.querySelector(".globe-wrap");
   if (!wrap || !linksBox) return;
-  if (liftTimer) return;
-  wrap.classList.toggle("interactive", earthUp);
-  if (earthUp) return;
-  const r = wrap.getBoundingClientRect();
-  const deficit = r.top - (window.innerHeight + 20);
-  if (deficit >= 0) return;
-  const add = Math.ceil(-deficit / SINK_STEP_PX) * SINK_STEP_PX;
-  wrap.style.transform = "translateY(" + (wrapY(wrap) + add) + "px)";
+  const nextTravel = globeDistance(wrap);
+  let y = earthUp ? 0 : nextTravel;
+  if (liftTimer && globeTravel > 0) {
+    y = Math.max(0, Math.min(1, wrapY(wrap) / globeTravel)) * nextTravel;
+  }
+  globeTravel = nextTravel;
+  wrap.style.transform = "translateY(" + y + "px)";
+  wrap.classList.toggle("interactive", earthUp && !liftTimer);
 }
 sinkInstant();
 function positionLinks(rot) {
@@ -423,7 +423,9 @@ buildCord(PT_MAX);
 function anchorX() {
   return 53;
 }
+let cordFitted = false;
 function fitCord() {
+  if (phoneLayout && cordFitted) return;
   const r = cord.getBoundingClientRect();
   const scale = r.width / CW || 1;
   const ax = anchorX();
@@ -443,28 +445,35 @@ function fitCord() {
     AX = ax;
     buildCord(n);
   }
+  cordFitted = true;
 }
 function fitTitle() {
   const h1 = document.querySelector("h1");
   if (!h1) return;
   h1.style.fontSize = "";
   h1.style.whiteSpace = "nowrap";
+  h1.style.width = "max-content";
   const main = h1.closest("main");
   const mcs = getComputedStyle(main);
   const cs = getComputedStyle(h1);
   const avail =
-    main.clientWidth -
+    (phoneLayout ? layoutWidth : main.clientWidth) -
     parseFloat(mcs.paddingLeft) -
     parseFloat(mcs.paddingRight) -
     parseFloat(cs.marginLeft) -
     parseFloat(cs.marginRight);
-  if (avail <= 0) return;
+  if (avail <= 0) {
+    h1.style.whiteSpace = "";
+    h1.style.width = "";
+    return;
+  }
   const over = h1.scrollWidth / avail;
   if (over > 1) {
     const size = parseFloat(cs.fontSize);
     h1.style.fontSize = ((size / over) * 0.98).toFixed(1) + "px";
   }
   h1.style.whiteSpace = "";
+  h1.style.width = "";
 }
 function refit() {
   fitTitle();
@@ -477,17 +486,19 @@ if (document.fonts) {
   document.fonts
     .load("16px Monocraft")
     .then(refit)
-    .catch(() => { });
+    .catch(() => {});
   setTimeout(refit, 700);
 }
-let fitT = null;
-window.addEventListener("resize", () => {
-  clearTimeout(fitT);
-  fitT = setTimeout(() => {
-    refit();
-    if (!earthUp) sinkInstant();
-  }, 150);
-});
+window.addEventListener("resize", refit);
+window.addEventListener("orientationchange", refit);
+if (
+  screen.orientation &&
+  typeof screen.orientation.addEventListener === "function"
+) {
+  screen.orientation.addEventListener("change", refit);
+}
+if (window.visualViewport)
+  window.visualViewport.addEventListener("resize", refit);
 function cursorCollide() {
   if (collider.r <= 0) return;
   const reach = Math.abs(
@@ -835,14 +846,14 @@ window.addEventListener("pagehide", () => {
         col:
           collider.r > 0
             ? [
-              Math.round(collider.x),
-              Math.round(collider.y),
-              Math.round(collider.r),
-            ]
+                Math.round(collider.x),
+                Math.round(collider.y),
+                Math.round(collider.r),
+              ]
             : null,
       }),
     );
-  } catch (e) { }
+  } catch (e) {}
 });
 const PHYS_STEP = 1000 / 60;
 let lastFrameT = 0;
@@ -878,9 +889,3 @@ function frame(now) {
 }
 startGlobe();
 requestAnimationFrame(frame);
-/*
-  Этот файл (script.js) полностью написан ИИ.
-  Отдельные части HTML и CSS также сгенерированы ИИ.
-  Вайбкодеры — дерьмо, и автор сайта категорически осуждает
-  таких недоносков, которые не знают базовых вещей и лезут в код.
-*/

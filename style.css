@@ -9,6 +9,9 @@
 }
 
 :root {
+  --layout-vw: 1vw;
+  --cord-width: min(420px, 100vw);
+  --mod-width: calc(100vw - 32px);
   --background: #0a0a0a;
   --amber: #cacbcc;
   --amber-britght: #ffffff;
@@ -18,13 +21,18 @@
 
 html,
 body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   overscroll-behavior: none;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   touch-action: none;
 }
 
 body {
+  position: fixed;
+  inset: 0;
   font-family: "Monocraft", monospace;
   background: var(--background);
   color: var(--amber);
@@ -80,7 +88,7 @@ header a:nth-child(3) {
 }
 
 .type {
-  font-size: clamp(18px, 2.5vw, 28px);
+  font-size: clamp(18px, calc(2.5 * var(--layout-vw)), 28px);
   white-space: nowrap;
 }
 
@@ -96,7 +104,7 @@ header a:nth-child(3) {
 
 pre.globe {
   font-family: inherit;
-  font-size: clamp(12px, 1.5vw, 24px);
+  font-size: clamp(12px, calc(1.5 * var(--layout-vw)), 24px);
   line-height: 1;
   text-align: left;
   font-variant-ligatures: none;
@@ -106,7 +114,7 @@ pre.globe {
 
 pre.map {
   font-family: inherit;
-  font-size: clamp(6px, 0.9vw, 16px);
+  font-size: clamp(6px, calc(0.9 * var(--layout-vw)), 16px);
   line-height: 1;
   text-align: left;
   font-variant-ligatures: none;
@@ -138,7 +146,7 @@ main {
   position: absolute;
   top: 0;
   left: 0;
-  width: min(420px, 100vw);
+  width: var(--cord-width);
   height: auto;
   pointer-events: none;
   z-index: 20;
@@ -199,8 +207,12 @@ html.light {
   width: min(700px, 90vw);
 }
 
+html.phone .stack {
+  width: min(700px, calc(90 * var(--layout-vw)));
+}
+
 .downloads {
-  margin: 20px 0 56px; 
+  margin: 20px 0 56px;
   width: 100%;
   border: 1px dashed var(--amber);
 }
@@ -215,14 +227,12 @@ html.light {
   border-top: 1px dashed var(--amber);
 }
 
-@media (max-width: 600px) {
-  .dl {
-    padding: 12px 16px;
-  }
+html.compact .dl {
+  padding: 12px 16px;
+}
 
-  pre.globe {
-    font-size: 10px;
-  }
+html.compact pre.globe {
+  font-size: 10px;
 }
 
 .dl:hover {
@@ -250,15 +260,15 @@ html.light {
 }
 
 h1 {
-  font-size: clamp(28px, 3.5vw, 56px);
+  font-size: clamp(28px, calc(3.5 * var(--layout-vw)), 56px);
   text-transform: uppercase;
   margin: 24px 0 20px;
 }
 
 body.mod h1 {
   font-family: "Minimalistic History", "Monocraft", monospace;
-  
-  font-size: clamp(33px, 4.1vw, 65px);
+
+  font-size: clamp(33px, calc(4.1 * var(--layout-vw)), 65px);
 }
 
 .sub {
@@ -267,11 +277,11 @@ body.mod h1 {
 }
 
 .mod main {
-  position: relative; 
+  position: relative;
   overflow: visible;
   align-content: start;
   grid-template-rows: auto 1fr;
-  }
+}
 
 .license {
   position: absolute;
@@ -288,33 +298,31 @@ body.mod h1 {
   margin-top: max(16px, 10vh);
 }
 
-@media (max-width: 600px) {
-  .mod main {
-    align-content: start;
-    grid-template-rows: auto 1fr;
-    padding: 16px;
-  }
+html.compact .mod main {
+  align-content: start;
+  grid-template-rows: auto 1fr;
+  padding: 16px;
+}
 
-  .license {
-    position: static;
-    white-space: normal;
-    margin: 4px 0 24px;
-    font-size: 11px;
-    line-height: 1.45;
-  }
+html.compact .license {
+  position: static;
+  white-space: normal;
+  margin: 4px 0 24px;
+  font-size: 11px;
+  line-height: 1.45;
+}
 
-  h1,
-  .sub {
-    margin-left: 19vw;
-  }
+html.compact h1,
+html.compact .sub {
+  margin-left: calc(19 * var(--layout-vw));
+}
 
-  .sub {
-    margin-bottom: 0;
-  }
+html.compact .sub {
+  margin-bottom: 0;
+}
 
-  .stack {
-    width: 100%;
-  }
+html.compact .stack {
+  width: 100%;
 }
 
 .chto {
@@ -331,7 +339,53 @@ body.mod h1 {
 
 .chto-label {
   color: var(--amber);
-  margin-bottom: 28px; 
+  margin-bottom: 28px;
   position: relative;
-  top: 18px; 
+  top: 18px;
+}
+
+@media (orientation: landscape) {
+  html.phone.compact .mod main {
+    grid-template-rows: auto 1fr auto;
+    gap: 8px;
+  }
+
+  html.phone.compact .head {
+    margin-top: 0;
+  }
+
+  html.phone.compact .head h1 {
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+
+  html.phone.compact .stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--mod-width);
+    align-items: center;
+    gap: 16px;
+  }
+
+  html.phone.compact .downloads {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+  }
+
+  html.phone.compact .chto {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    padding: 0 0 0 84px;
+  }
+
+  html.phone.compact .chto-label {
+    top: 0;
+    margin-bottom: 12px;
+  }
+
+  html.phone.compact .license {
+    justify-self: end;
+    margin: 4px 0 0;
+  }
 }
