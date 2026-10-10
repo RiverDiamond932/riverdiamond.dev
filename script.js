@@ -330,6 +330,15 @@ let tassel = [];
 const collider = { x: -999, y: -999, r: 0 };
 const CURSOR_R = 20;
 const FINGER_R = 14;
+let lastTouch = null;
+let ropePress = null;
+function resetCordInteraction() {
+  collider.x = -999;
+  collider.y = -999;
+  collider.r = 0;
+  lastTouch = null;
+  ropePress = null;
+}
 function buildCord(n) {
   pts = [];
   for (let i = 0; i < n; i++)
@@ -423,10 +432,25 @@ buildCord(PT_MAX);
 function anchorX() {
   return 53;
 }
-let cordFitted = false;
+let cordBounds = null;
 function fitCord() {
-  if (phoneLayout && cordFitted) return;
   const r = cord.getBoundingClientRect();
+  if (
+    cordBounds &&
+    (r.left !== cordBounds.left ||
+      r.top !== cordBounds.top ||
+      r.width !== cordBounds.width ||
+      r.height !== cordBounds.height ||
+      phoneLayout !== cordBounds.phoneLayout)
+  )
+    resetCordInteraction();
+  cordBounds = {
+    left: r.left,
+    top: r.top,
+    width: r.width,
+    height: r.height,
+    phoneLayout,
+  };
   const scale = r.width / CW || 1;
   const ax = anchorX();
   const x1 = (ax - 34) * scale;
@@ -445,7 +469,6 @@ function fitCord() {
     AX = ax;
     buildCord(n);
   }
-  cordFitted = true;
 }
 function fitTitle() {
   const h1 = document.querySelector("h1");
@@ -476,6 +499,7 @@ function fitTitle() {
   h1.style.width = "";
 }
 function refit() {
+  updateViewportLayout();
   fitTitle();
   fitCord();
   sinkInstant();
@@ -491,6 +515,7 @@ if (document.fonts) {
 }
 window.addEventListener("resize", refit);
 window.addEventListener("orientationchange", refit);
+coarsePointer.addEventListener("change", refit);
 if (
   screen.orientation &&
   typeof screen.orientation.addEventListener === "function"
@@ -744,8 +769,6 @@ function swingCord(e, dx, dy) {
     }
   }
 }
-let lastTouch = null;
-let ropePress = null;
 function pokeCord(e) {
   const r = cord.getBoundingClientRect();
   const scale = r.width / CW;
