@@ -303,12 +303,12 @@ if (sessionStorage.getItem("introSeen")) {
   if (caret) caret.remove();
   startGlobe();
 } else if (txt && intro && caret) {
-  sessionStorage.setItem("introSeen", "1");
   const cordCanvas = document.getElementById("cord");
   if (cordCanvas) cordCanvas.style.visibility = "hidden";
   setTimeout(async () => {
     await typeText(txt, phrase, 160);
     await pause(2500);
+    sessionStorage.setItem("introSeen", "1");
     intro.remove();
     if (cordCanvas) cordCanvas.style.visibility = "";
   }, 900);
