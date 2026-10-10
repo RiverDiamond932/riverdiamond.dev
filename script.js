@@ -41,21 +41,42 @@ const regionEls = linksBox
     })
   : [];
 const phrase = "Привет, я river_diamond";
-function typeText(el, text, speed, caretEl) {
-  return new Promise((resolve) => {
-    let n = 0;
-    const t = setInterval(() => {
-      n++;
-      el.textContent = text.slice(0, n);
-      if (caretEl) el.appendChild(caretEl);
-      if (n >= text.length) {
-        clearInterval(t);
-        resolve();
-      }
-    }, speed);
-  });
+function playIntro() {
+  const typingEnd = 900 + phrase.length * 160;
+  const duration = typingEnd + 2500;
+  const saved = Math.min(
+    duration,
+    Math.max(0, Number(sessionStorage.getItem("introProgress")) || 0),
+  );
+  const startedAt = performance.now() - saved;
+  const cordCanvas = document.getElementById("cord");
+  if (cordCanvas) cordCanvas.style.visibility = "hidden";
+  function saveProgress() {
+    const elapsed = Math.min(duration, performance.now() - startedAt);
+    sessionStorage.setItem("introProgress", String(elapsed));
+    return elapsed;
+  }
+  function advance() {
+    const elapsed = saveProgress();
+    const n = Math.min(
+      phrase.length,
+      Math.max(0, Math.floor((elapsed - 900) / 160)),
+    );
+    txt.textContent = phrase.slice(0, n);
+    if (elapsed >= duration) {
+      sessionStorage.setItem("introSeen", "1");
+      sessionStorage.removeItem("introProgress");
+      window.removeEventListener("pagehide", saveProgress);
+      intro.remove();
+      if (cordCanvas) cordCanvas.style.visibility = "";
+      return;
+    }
+    const next = n < phrase.length ? 900 + (n + 1) * 160 : duration;
+    setTimeout(advance, Math.max(1, next - elapsed));
+  }
+  window.addEventListener("pagehide", saveProgress);
+  advance();
 }
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const ROWS = 26;
 const COLS = 40;
 const R = ROWS / 2;
@@ -303,15 +324,7 @@ if (sessionStorage.getItem("introSeen")) {
   if (caret) caret.remove();
   startGlobe();
 } else if (txt && intro && caret) {
-  const cordCanvas = document.getElementById("cord");
-  if (cordCanvas) cordCanvas.style.visibility = "hidden";
-  setTimeout(async () => {
-    await typeText(txt, phrase, 160);
-    await pause(2500);
-    sessionStorage.setItem("introSeen", "1");
-    intro.remove();
-    if (cordCanvas) cordCanvas.style.visibility = "";
-  }, 900);
+  playIntro();
 }
 const cord = document.getElementById("cord");
 const cctx = cord.getContext("2d");
