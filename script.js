@@ -1,3 +1,27 @@
+const fallbackState = new Map();
+const stateStore = {
+  getItem(key) {
+    if (fallbackState.has(key)) return fallbackState.get(key);
+    try {
+      return sessionStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  },
+  setItem(key, value) {
+    const text = String(value);
+    fallbackState.set(key, text);
+    try {
+      sessionStorage.setItem(key, text);
+    } catch (e) {}
+  },
+  removeItem(key) {
+    fallbackState.set(key, null);
+    try {
+      sessionStorage.removeItem(key);
+    } catch (e) {}
+  },
+};
 const txt = document.querySelector(".txt");
 const caret = document.querySelector(".caret");
 const intro = document.querySelector(".intro");
@@ -41,21 +65,43 @@ const regionEls = linksBox
     })
   : [];
 const phrase = "Привет, я river_diamond";
-function typeText(el, text, speed, caretEl) {
-  return new Promise((resolve) => {
-    let n = 0;
-    const t = setInterval(() => {
-      n++;
-      el.textContent = text.slice(0, n);
-      if (caretEl) el.appendChild(caretEl);
-      if (n >= text.length) {
-        clearInterval(t);
-        resolve();
-      }
-    }, speed);
-  });
+function playIntro() {
+  const typingEnd = 900 + phrase.length * 160;
+  const duration = typingEnd + 2500;
+  const saved = Math.min(
+    duration,
+    Math.max(0, Number(stateStore.getItem("introProgress")) || 0),
+  );
+  const startedAt = performance.now() - saved;
+  const cordCanvas = document.getElementById("cord");
+  if (cordCanvas) cordCanvas.style.visibility = "hidden";
+  function saveProgress() {
+    const elapsed = Math.min(duration, performance.now() - startedAt);
+    stateStore.setItem("introProgress", String(elapsed));
+    return elapsed;
+  }
+  function advance() {
+    const elapsed = saveProgress();
+    const n = Math.min(
+      phrase.length,
+      Math.max(0, Math.floor((elapsed - 900) / 160)),
+    );
+    txt.textContent = phrase.slice(0, n);
+    if (elapsed >= duration) {
+      stateStore.setItem("introSeen", "1");
+      stateStore.removeItem("introProgress");
+      window.removeEventListener("pagehide", saveProgress);
+      intro.remove();
+      if (cordCanvas) cordCanvas.style.visibility = "";
+      sinkInstant();
+      return;
+    }
+    const next = n < phrase.length ? 900 + (n + 1) * 160 : duration;
+    setTimeout(advance, Math.max(1, next - elapsed));
+  }
+  window.addEventListener("pagehide", saveProgress);
+  advance();
 }
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const ROWS = 26;
 const COLS = 40;
 const R = ROWS / 2;
@@ -121,6 +167,47 @@ function startGlobe() {
   let speed = 1;
   let autoStep = -0.022;
   let inertia = 0;
+  try {
+    const saved = JSON.parse(stateStore.getItem("globeRotation") || "null");
+    if (
+      saved &&
+      Number.isFinite(saved.rot) &&
+      saved.rot >= 0 &&
+      saved.rot < 2 * Math.PI &&
+      Number.isFinite(saved.speed) &&
+      saved.speed >= 0.25 &&
+      saved.speed <= 1 &&
+      Number.isFinite(saved.autoStep) &&
+      Math.abs(saved.autoStep) === 0.022 &&
+      Number.isFinite(saved.inertia) &&
+      Math.abs(saved.inertia) <= 0.35 &&
+      Number.isInteger(saved.beamRow) &&
+      saved.beamRow >= 0 &&
+      saved.beamRow < ROWS + 3
+    ) {
+      rot = saved.rot;
+      speed = saved.speed;
+      autoStep = saved.autoStep;
+      inertia = saved.inertia;
+      beamRow = saved.beamRow;
+    }
+  } catch (e) {}
+  function saveRotation() {
+    const angle = rot % (2 * Math.PI);
+    stateStore.setItem(
+      "globeRotation",
+      JSON.stringify({
+        rot: angle < 0 ? angle + 2 * Math.PI : angle,
+        speed,
+        autoStep,
+        inertia,
+        beamRow,
+      }),
+    );
+  }
+  renderGlobe(rot);
+  positionLinks(rot);
+  sinkInstant();
   let drag = null;
   let suppressClickUntil = 0;
   let firstSinkDone = false;
@@ -189,8 +276,12 @@ function startGlobe() {
   window.addEventListener("pointercancel", endDrag);
   window.addEventListener("blur", endDrag);
   cancelGlobeDrag = () => endDrag({ type: "pointercancel" });
+  window.addEventListener("pagehide", saveRotation);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) cancelGlobeDrag();
+    if (document.hidden) {
+      cancelGlobeDrag();
+      saveRotation();
+    }
   });
   wrap.addEventListener("lostpointercapture", (e) => {
     if (e.target === wrap) endDrag(e);
@@ -226,12 +317,27 @@ function startGlobe() {
   }, 90);
 }
 let rising = false;
-let earthUp = sessionStorage.getItem("earthRisen") === "1";
-sessionStorage.removeItem("earthRisen");
+let earthUp = stateStore.getItem("earthRisen") === "1";
 let liftTimer = null;
+let liftNextStep = 0;
 let globeTravel = 0;
 const SINK_STEP_PX = 18;
 const SINK_STEP_MS = 170;
+let liftToResume = null;
+try {
+  const saved = JSON.parse(stateStore.getItem("globeLift") || "null");
+  if (
+    saved &&
+    saved.up === earthUp &&
+    Number.isFinite(saved.progress) &&
+    saved.progress >= 0 &&
+    saved.progress <= 1 &&
+    Number.isFinite(saved.remaining) &&
+    saved.remaining >= 0 &&
+    saved.remaining <= SINK_STEP_MS
+  )
+    liftToResume = saved;
+} catch (e) {}
 function wrapY(wrap) {
   const match = /translateY\((-?[\d.]+)px\)/.exec(wrap.style.transform || "");
   return match ? Number(match[1]) : 0;
@@ -240,17 +346,25 @@ function globeDistance(wrap) {
   const baseTop = wrap.getBoundingClientRect().top - wrapY(wrap);
   return Math.max(1, window.innerHeight - baseTop);
 }
-function moveGlobe(up) {
+function syncGlobeInteraction(wrap = document.querySelector(".globe-wrap")) {
+  if (!wrap) return;
+  const interactive = earthUp && !liftTimer && !intro?.isConnected;
+  wrap.classList.toggle("interactive", interactive);
+  wrap.inert = !interactive;
+  document.getElementById("cord")?.setAttribute("aria-expanded", String(earthUp));
+}
+function moveGlobe(up, delay = SINK_STEP_MS) {
   cancelGlobeDrag();
   if (liftTimer) {
-    clearInterval(liftTimer);
+    clearTimeout(liftTimer);
     liftTimer = null;
   }
   const wrap = document.querySelector(".globe-wrap");
   if (!wrap) return;
   wrap.classList.remove("interactive");
+  wrap.inert = true;
   globeTravel = globeDistance(wrap);
-  liftTimer = setInterval(() => {
+  function step() {
     const target = up ? 0 : globeTravel;
     const current = wrapY(wrap);
     const y = up
@@ -258,15 +372,23 @@ function moveGlobe(up) {
       : Math.min(target, current + SINK_STEP_PX);
     wrap.style.transform = "translateY(" + y + "px)";
     if (y === target) {
-      clearInterval(liftTimer);
       liftTimer = null;
-      wrap.classList.toggle("interactive", earthUp);
+      liftNextStep = 0;
+      stateStore.removeItem("globeLift");
+      syncGlobeInteraction(wrap);
+    } else {
+      liftNextStep = performance.now() + SINK_STEP_MS;
+      liftTimer = setTimeout(step, SINK_STEP_MS);
     }
-  }, SINK_STEP_MS);
+  }
+  liftNextStep = performance.now() + delay;
+  liftTimer = setTimeout(step, delay);
+  syncGlobeInteraction(wrap);
 }
 function toggleGlobe() {
   startGlobe();
   earthUp = !earthUp;
+  stateStore.setItem("earthRisen", earthUp ? "1" : "0");
   moveGlobe(earthUp);
 }
 function sinkInstant() {
@@ -276,11 +398,38 @@ function sinkInstant() {
   let y = earthUp ? 0 : nextTravel;
   if (liftTimer && globeTravel > 0) {
     y = Math.max(0, Math.min(1, wrapY(wrap) / globeTravel)) * nextTravel;
+  } else if (liftToResume) {
+    y = liftToResume.progress * nextTravel;
   }
   globeTravel = nextTravel;
   wrap.style.transform = "translateY(" + y + "px)";
-  wrap.classList.toggle("interactive", earthUp && !liftTimer);
+  if (liftToResume) {
+    const remaining = liftToResume.remaining;
+    liftToResume = null;
+    moveGlobe(earthUp, remaining);
+  }
+  syncGlobeInteraction(wrap);
 }
+function saveGlobeLift() {
+  const wrap = document.querySelector(".globe-wrap");
+  if (!wrap) return;
+  if (!liftTimer || globeTravel <= 0) {
+    stateStore.removeItem("globeLift");
+    return;
+  }
+  stateStore.setItem(
+    "globeLift",
+    JSON.stringify({
+      up: earthUp,
+      progress: Math.max(0, Math.min(1, wrapY(wrap) / globeTravel)),
+      remaining: Math.max(0, liftNextStep - performance.now()),
+    }),
+  );
+}
+window.addEventListener("pagehide", saveGlobeLift);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) saveGlobeLift();
+});
 sinkInstant();
 function positionLinks(rot) {
   const w = globe.clientWidth;
@@ -292,26 +441,22 @@ function positionLinks(rot) {
     const nx = c * Math.sin(l);
     const nz = c * Math.cos(l);
     const el = regionEls[i];
+    const visible = earthUp && !liftTimer && !intro?.isConnected && nz > 0.12;
     el.style.left = w / 2 + (nx * w) / 2 + "px";
     el.style.top = h / 2 - (ny * h) / 2 + "px";
     el.style.opacity = nz > 0.12 ? 1 : 0;
-    el.style.pointerEvents = nz > 0.12 ? "auto" : "none";
+    el.style.pointerEvents = visible ? "auto" : "none";
+    el.tabIndex = visible ? 0 : -1;
+    el.setAttribute("aria-hidden", String(!visible));
   });
 }
-if (sessionStorage.getItem("introSeen")) {
+if (stateStore.getItem("introSeen")) {
   if (intro) intro.remove();
   if (caret) caret.remove();
+  syncGlobeInteraction();
   startGlobe();
 } else if (txt && intro && caret) {
-  sessionStorage.setItem("introSeen", "1");
-  const cordCanvas = document.getElementById("cord");
-  if (cordCanvas) cordCanvas.style.visibility = "hidden";
-  setTimeout(async () => {
-    await typeText(txt, phrase, 160);
-    await pause(2500);
-    intro.remove();
-    if (cordCanvas) cordCanvas.style.visibility = "";
-  }, 900);
+  playIntro();
 }
 const cord = document.getElementById("cord");
 const cctx = cord.getContext("2d");
@@ -330,6 +475,15 @@ let tassel = [];
 const collider = { x: -999, y: -999, r: 0 };
 const CURSOR_R = 20;
 const FINGER_R = 14;
+let lastTouch = null;
+let ropePress = null;
+function resetCordInteraction() {
+  collider.x = -999;
+  collider.y = -999;
+  collider.r = 0;
+  lastTouch = null;
+  ropePress = null;
+}
 function buildCord(n) {
   pts = [];
   for (let i = 0; i < n; i++)
@@ -358,11 +512,36 @@ function buildCord(n) {
 }
 let swingToApply = null;
 try {
-  swingToApply = JSON.parse(sessionStorage.getItem("cordSwing") || "null");
-  sessionStorage.removeItem("cordSwing");
+  const saved = JSON.parse(stateStore.getItem("cordSwing") || "null");
+  const bounded = (value) =>
+    value === undefined ||
+    (Number.isFinite(value) && Math.abs(value) <= CW + CH);
+  if (
+    saved &&
+    typeof saved === "object" &&
+    !Array.isArray(saved) &&
+    [saved.n, saved.dx, saved.dy, saved.vx, saved.vy].every(bounded) &&
+    (saved.pose === undefined ||
+      (Array.isArray(saved.pose) &&
+        saved.pose.length >= PT_MIN &&
+        saved.pose.length <= PT_MAX &&
+        saved.pose.every(
+          (p) =>
+            Array.isArray(p) &&
+            p.length === 2 &&
+            Number.isFinite(p[0]) &&
+            Number.isFinite(p[1]) &&
+            p[0] >= 0 &&
+            p[0] <= CW &&
+            p[1] >= 0 &&
+            p[1] <= CH,
+        )))
+  )
+    swingToApply = saved;
 } catch (e) {
   swingToApply = null;
 }
+stateStore.removeItem("cordSwing");
 if (swingToApply) setTimeout(() => (swingToApply = null), 1500);
 function applySwing() {
   if (!swingToApply) return;
@@ -370,7 +549,12 @@ function applySwing() {
   const num = (v) => (Number.isFinite(+v) ? +v : 0);
   const last = pts.length - 1;
   if (Array.isArray(s.pose)) {
-    if (Array.isArray(s.col) && num(s.col[2]) > 0) {
+    if (
+      Array.isArray(s.col) &&
+      s.col.length === 3 &&
+      s.col.every((v) => Number.isFinite(v) && Math.abs(v) <= CW + CH) &&
+      s.col[2] > 0
+    ) {
       collider.x = num(s.col[0]);
       collider.y = num(s.col[1]);
       collider.r = num(s.col[2]);
@@ -423,10 +607,25 @@ buildCord(PT_MAX);
 function anchorX() {
   return 53;
 }
-let cordFitted = false;
+let cordBounds = null;
 function fitCord() {
-  if (phoneLayout && cordFitted) return;
   const r = cord.getBoundingClientRect();
+  if (
+    cordBounds &&
+    (r.left !== cordBounds.left ||
+      r.top !== cordBounds.top ||
+      r.width !== cordBounds.width ||
+      r.height !== cordBounds.height ||
+      phoneLayout !== cordBounds.phoneLayout)
+  )
+    resetCordInteraction();
+  cordBounds = {
+    left: r.left,
+    top: r.top,
+    width: r.width,
+    height: r.height,
+    phoneLayout,
+  };
   const scale = r.width / CW || 1;
   const ax = anchorX();
   const x1 = (ax - 34) * scale;
@@ -445,7 +644,6 @@ function fitCord() {
     AX = ax;
     buildCord(n);
   }
-  cordFitted = true;
 }
 function fitTitle() {
   const h1 = document.querySelector("h1");
@@ -476,6 +674,7 @@ function fitTitle() {
   h1.style.width = "";
 }
 function refit() {
+  updateViewportLayout();
   fitTitle();
   fitCord();
   sinkInstant();
@@ -491,6 +690,7 @@ if (document.fonts) {
 }
 window.addEventListener("resize", refit);
 window.addEventListener("orientationchange", refit);
+coarsePointer.addEventListener("change", refit);
 if (
   screen.orientation &&
   typeof screen.orientation.addEventListener === "function"
@@ -557,10 +757,19 @@ function pull() {
     const d = Math.hypot(p.x - collider.x, p.y - collider.y);
     p.py += Math.min(3 + 3 * Math.exp(-d / 110), 5.5);
   }
+  if (
+    pts.every(
+      (p) => Math.abs(p.x - AX) < 0.001 && Math.abs(p.x - p.px) < 0.001,
+    )
+  ) {
+    const p = pts[Math.floor(pts.length / 2)];
+    p.x += 0.01;
+    p.px += 0.01;
+  }
   pullT = 0;
   if (!linksBox) {
     if (!navAfterPull) {
-      sessionStorage.setItem("earthRisen", "1");
+      stateStore.setItem("earthRisen", "1");
       navAfterPull = true;
     }
     return;
@@ -744,8 +953,6 @@ function swingCord(e, dx, dy) {
     }
   }
 }
-let lastTouch = null;
-let ropePress = null;
 function pokeCord(e) {
   const r = cord.getBoundingClientRect();
   const scale = r.width / CW;
@@ -773,6 +980,7 @@ function cordPos(e) {
   return { x, y, scale };
 }
 window.addEventListener("pointermove", (e) => {
+  if (!e.isPrimary || (lastTouch && lastTouch.id !== e.pointerId)) return;
   const c = cordPos(e);
   if (!c) return;
   collider.x = c.x;
@@ -799,7 +1007,7 @@ window.addEventListener("pointermove", (e) => {
   swingCord(e, dx, dy);
 });
 window.addEventListener("pointerdown", (e) => {
-  if (document.querySelector(".intro")) return;
+  if (!e.isPrimary || e.button !== 0 || document.querySelector(".intro")) return;
   const c = cordPos(e);
   if (!c) return;
   collider.x = c.x;
@@ -809,14 +1017,28 @@ window.addEventListener("pointerdown", (e) => {
     if (hitCord(e, 28, false)) pull();
     return;
   }
+  if (lastTouch && lastTouch.id !== e.pointerId) return;
+  lastTouch = { id: e.pointerId, x: e.clientX, y: e.clientY };
   collider.r = FINGER_R / c.scale;
   const onRope = hitCord(e, 26, false);
   const near = hitCord(e, 40, true);
   if (!onRope && !near) return;
-  ropePress = { x: e.clientX, y: e.clientY, dy: 0, moved: false, grab: onRope };
+  ropePress = {
+    id: e.pointerId,
+    x: e.clientX,
+    y: e.clientY,
+    dy: 0,
+    moved: false,
+    grab: onRope,
+  };
 });
 for (const type of ["pointerup", "pointercancel"]) {
   window.addEventListener(type, (e) => {
+    if (
+      (ropePress && ropePress.id !== e.pointerId) ||
+      (lastTouch && lastTouch.id !== e.pointerId)
+    )
+      return;
     if (type === "pointerup" && ropePress) {
       if (ropePress.dy > 40 && ropePress.grab) {
         pull();
@@ -830,10 +1052,28 @@ for (const type of ["pointerup", "pointercancel"]) {
     ropePress = null;
   });
 }
+cord.addEventListener("keydown", (e) => {
+  if (!["Enter", " "].includes(e.key)) return;
+  e.preventDefault();
+  if (!e.repeat && !document.querySelector(".intro")) pull();
+});
+if (document.body.classList.contains("mod"))
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.cancelable && e.touches.length === 1 && hitCord(e.touches[0], 26, false))
+        e.preventDefault();
+    },
+    { passive: false },
+  );
+window.addEventListener("blur", resetCordInteraction);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) resetCordInteraction();
+});
 window.addEventListener("pagehide", () => {
   try {
     const end = pts[pts.length - 1];
-    sessionStorage.setItem(
+    stateStore.setItem(
       "cordSwing",
       JSON.stringify({
         pose: pts.map((p) => [

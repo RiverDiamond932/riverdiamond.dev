@@ -1,22 +1,31 @@
 const root = document.documentElement;
-const phoneLayout =
-  navigator.maxTouchPoints > 0 ||
-  window.matchMedia("(pointer: coarse)").matches;
-const layoutWidth = phoneLayout
-  ? Math.min(
-      screen.width || window.innerWidth,
-      screen.height || window.innerHeight,
-      window.innerWidth,
-    )
-  : window.innerWidth;
-const compactLayout = layoutWidth <= 600;
-root.classList.toggle("phone", phoneLayout);
-root.classList.toggle("compact", compactLayout);
-if (phoneLayout) {
-  root.style.setProperty("--layout-vw", layoutWidth / 100 + "px");
-  root.style.setProperty("--cord-width", Math.min(420, layoutWidth) + "px");
-  root.style.setProperty("--mod-width", Math.max(0, layoutWidth - 32) + "px");
+const coarsePointer = window.matchMedia("(pointer: coarse)");
+let phoneLayout;
+let layoutWidth;
+function updateViewportLayout() {
+  phoneLayout = navigator.maxTouchPoints > 0 || coarsePointer.matches;
+  layoutWidth = phoneLayout
+    ? Math.min(
+        screen.width || window.innerWidth,
+        screen.height || window.innerHeight,
+        window.innerWidth,
+      )
+    : window.innerWidth;
+  root.classList.toggle("phone", phoneLayout);
+  root.classList.toggle("compact", layoutWidth <= 600);
+  if (phoneLayout) {
+    root.style.setProperty("--layout-vw", layoutWidth / 100 + "px");
+    root.style.setProperty("--cord-width", Math.min(420, layoutWidth) + "px");
+    root.style.setProperty("--mod-width", Math.max(0, layoutWidth - 32) + "px");
+  } else {
+    for (const property of ["--layout-vw", "--cord-width", "--mod-width"])
+      root.style.removeProperty(property);
+  }
 }
+updateViewportLayout();
+window.addEventListener("resize", updateViewportLayout);
+window.addEventListener("orientationchange", updateViewportLayout);
+coarsePointer.addEventListener("change", updateViewportLayout);
 function preventViewportGesture(e) {
   if (e.cancelable) e.preventDefault();
 }

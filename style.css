@@ -131,10 +131,17 @@ main {
 }
 
 * {
+  scrollbar-width: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 *:focus,
@@ -247,6 +254,13 @@ html.compact pre.globe {
   -webkit-tap-highlight-color: transparent;
 }
 
+#cord:focus-visible,
+.globe-links a:focus-visible,
+.dl:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 4px;
+}
+
 .back {
   display: block;
   width: fit-content;
@@ -342,6 +356,12 @@ html.compact .stack {
   margin-bottom: 28px;
   position: relative;
   top: 18px;
+}
+
+@media (max-height: 600px) {
+  html:not(.compact) .mod main {
+    padding-bottom: 72px;
+  }
 }
 
 @media (orientation: landscape) {
